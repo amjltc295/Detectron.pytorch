@@ -99,8 +99,8 @@ class MaskRCNNWorker:
             sys.exit("Need a CUDA device to run the code.")
 
         args = parse_args()
-        print('Called with args:')
-        print(args)
+        logger.info('Called with args:')
+        logger.info(args)
 
         assert args.image_dir or args.images
         assert bool(args.image_dir) ^ bool(args.images)
@@ -114,7 +114,7 @@ class MaskRCNNWorker:
         else:
             raise ValueError(f'Unexpected dataset name: {args.dataset}')
 
-        print('load cfg from file: {}'.format(args.cfg_file))
+        logger.info('load cfg from file: {}'.format(args.cfg_file))
         cfg_from_file(args.cfg_file)
 
         if args.set_cfgs is not None:
@@ -135,13 +135,13 @@ class MaskRCNNWorker:
 
         if args.load_ckpt:
             load_name = args.load_ckpt
-            print("loading checkpoint %s" % (load_name))
+            logger.info("loading checkpoint %s" % (load_name))
             checkpoint = torch.load(
                 load_name, map_location=lambda storage, loc: storage)
             net_utils.load_ckpt(maskRCNN, checkpoint['model'])
 
         if args.load_detectron:
-            print("loading detectron weights %s" % args.load_detectron)
+            logger.info("loading detectron weights %s" % args.load_detectron)
             load_detectron_weight(maskRCNN, args.load_detectron)
 
         maskRCNN = mynn.DataParallel(
@@ -149,6 +149,11 @@ class MaskRCNNWorker:
             minibatch=True, device_ids=[0])  # only support single GPU
 
         maskRCNN.eval()
+
+        self.maskRCNN = maskRCNN
+        self.args = args
+
+    def infer(self):
         if args.image_dir:
             imglist = misc_utils.get_imagelist_from_dir(args.image_dir)
         else:
@@ -158,7 +163,7 @@ class MaskRCNNWorker:
             os.makedirs(args.output_dir)
 
         for i in xrange(num_images):
-            print('img', i)
+            logger.info('img', i)
             im = cv2.imread(imglist[i])
             assert im is not None
 
