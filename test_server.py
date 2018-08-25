@@ -1,20 +1,15 @@
 import logging
-import base64
-import io
 import time
 
 from PIL import Image
-from scipy.misc import imresize
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import numpy as np
 
 import argparse
 import distutils.util
-import os
 import sys
-import subprocess
 from collections import defaultdict
-from six.moves import xrange
 
 # Use a non-interactive backend
 import matplotlib
@@ -29,9 +24,7 @@ from core.config import cfg, cfg_from_file, cfg_from_list, assert_and_infer_cfg
 from core.test import im_detect_all
 from modeling.model_builder import Generalized_RCNN
 import datasets.dummy_datasets as datasets
-import utils.misc as misc_utils
 import utils.net as net_utils
-import utils.vis as vis_utils
 from utils.detectron_weight_helper import load_detectron_weight
 from utils.timer import Timer
 
@@ -106,10 +99,10 @@ class MaskRCNNWorker:
         assert bool(args.image_dir) ^ bool(args.images)
 
         if args.dataset.startswith("coco"):
-            dataset = datasets.get_coco_dataset()
-            cfg.MODEL.NUM_CLASSES = len(dataset.classes)
+            self.dataset = datasets.get_coco_dataset()
+            cfg.MODEL.NUM_CLASSES = len(self.dataset.classes)
         elif args.dataset.startswith("keypoints_coco"):
-            dataset = datasets.get_coco_dataset()
+            self.dataset = datasets.get_coco_dataset()
             cfg.MODEL.NUM_CLASSES = 2
         else:
             raise ValueError(f'Unexpected dataset name: {args.dataset}')
@@ -153,87 +146,27 @@ class MaskRCNNWorker:
         self.maskRCNN = maskRCNN
         self.args = args
 
-    def infer(self):
-        if args.image_dir:
-            imglist = misc_utils.get_imagelist_from_dir(args.image_dir)
-        else:
-            imglist = args.images
-        num_images = len(imglist)
-        if not os.path.exists(args.output_dir):
-            os.makedirs(args.output_dir)
-
-        for i in xrange(num_images):
-            logger.info('img', i)
-            im = cv2.imread(imglist[i])
-            assert im is not None
-
-            timers = defaultdict(Timer)
-
-            cls_boxes, cls_segms, cls_keyps = im_detect_all(
-                maskRCNN, im, timers=timers)
-
-            im_name, _ = os.path.splitext(os.path.basename(imglist[i]))
-            vis_utils.vis_one_image(
-                im[:, :, ::-1],  # BGR -> RGB for visualization
-                im_name,
-                args.output_dir,
-                cls_boxes,
-                cls_segms,
-                cls_keyps,
-                dataset=dataset,
-                box_alpha=0.3,
-                show_class=True,
-                thresh=0.7,
-                kp_thresh=2
-            )
-
-        if args.merge_pdfs and num_images > 1:
-            merge_out_path = '{}/results.pdf'.format(args.output_dir)
-            if os.path.exists(merge_out_path):
-                os.remove(merge_out_path)
-            command = "pdfunite {}/*.pdf {}".format(args.output_dir,
-                                                    merge_out_path)
-            subprocess.call(command, shell=True)
-
-    def infer(self, img):
-
+    def infer(self, img_PIL):
         start_time = time.time()
-        aspect_ratio = img.size[0] / img.size[1]
-        img = self.transform(img)
-        img = img.unsqueeze(0)
 
-        data = {
-            "A": img,
-            "A_paths": "test.jpeg"
+        im = np.array(img_PIL)[:, :, ::-1].copy()
+        timers = defaultdict(Timer)
+
+        cls_boxes, cls_segms, cls_keyps = im_detect_all(
+            self.maskRCNN, im, timers=timers)
+
+        logger.info("Infer time: {}".format(time.time() - start_time))
+        result = {
+            'boxes': cls_boxes,
+            'segms': cls_segms,
+            'keyps': cls_keyps
         }
-        self.model.set_input(data)
-        self.model.test()
-        visuals = self.model.get_current_visuals()
-        for label, im_data in visuals.items():
-            if 'fake' not in label:
-                continue
-            im = tensor2im(im_data)
-            h, w, _ = im.shape
-            if aspect_ratio > 1.0:
-                im = imresize(im, (h, int(w * aspect_ratio)), interp='bicubic')
-            if aspect_ratio < 1.0:
-                im = imresize(im, (int(h / aspect_ratio), w), interp='bicubic')
-            im = Image.fromarray(im)
-
-            with io.BytesIO() as buf:
-                im.save(buf, format="jpeg")
-                buf.seek(0)
-                encoded_string = base64.b64encode(buf.read())
-                encoded_result_image = (
-                    b'data:image/jpeg;base64,' + encoded_string
-                )
-                logger.info("Infer time: {}".format(time.time() - start_time))
-                return encoded_result_image
+        return result
 
 
 app = Flask(__name__)
 CORS(app)
-mask_rcnn_worker = MaskRCNWorker()
+mask_rcnn_worker = MaskRCNNWorker()
 
 
 @app.route('/hi', methods=['GET'])
@@ -262,7 +195,7 @@ def mask_rcnn():
             "could not be read by PIL"
         )
     try:
-        result = cycle_gan_worker.infer(image)
+        result = mask_rcnn_worker.infer(image)
     except Exception as err:
         logger.error(str(err), exc_info=True)
         raise InvalidUsage(
@@ -270,7 +203,7 @@ def mask_rcnn():
             "The server encounters some error to process this image",
             status_code=500
         )
-    return jsonify({'result': result.decode('utf-8')})
+    return jsonify(result)
 
 
 class InvalidUsage(Exception):
