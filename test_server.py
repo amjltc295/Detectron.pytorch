@@ -8,10 +8,6 @@ from scipy.misc import imresize
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from options.test_options import TestOptions
-from data.base_dataset import get_transform
-from models import create_model
-from util.util import tensor2im
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,10 +17,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class CycleGANWorker:
+class MaskRCNNWorker:
 
     def __init__(self):
-        logger.info("Initializing ..")
+        logger.info("Initializing Mask RCNN..")
         opt = TestOptions().parse()
         opt.nThreads = 1   # test code only supports nThreads = 1
         opt.batchSize = 1  # test code only supports batchSize = 1
@@ -75,16 +71,16 @@ class CycleGANWorker:
 
 app = Flask(__name__)
 CORS(app)
-cycle_gan_worker = CycleGANWorker()
+mask_rcnn_worker = MaskRCNWorker()
 
 
 @app.route('/hi', methods=['GET'])
 def hi():
-    return jsonify({"message": "Hi!"})
+    return jsonify({"message": "Hi! This is a Mask RCNN worker."})
 
 
-@app.route('/cyclegan', methods=['POST'])
-def cyclegan():
+@app.route('/mask_rcnn', methods=['POST'])
+def mask_rcnn():
     try:
         image_file = request.files['pic']
     except Exception as err:
