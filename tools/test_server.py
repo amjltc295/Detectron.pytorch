@@ -19,6 +19,7 @@ import cv2
 
 import torch
 
+import _init_paths   # NOQA
 import nn as mynn
 from core.config import cfg, cfg_from_file, cfg_from_list, assert_and_infer_cfg
 from core.test import im_detect_all
@@ -94,9 +95,6 @@ class MaskRCNNWorker:
         args = parse_args()
         logger.info('Called with args:')
         logger.info(args)
-
-        assert args.image_dir or args.images
-        assert bool(args.image_dir) ^ bool(args.images)
 
         if args.dataset.startswith("coco"):
             self.dataset = datasets.get_coco_dataset()
