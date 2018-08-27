@@ -3,8 +3,8 @@ import time
 
 from PIL import Image
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import numpy as np
+import jsonpickle
 
 import argparse
 import distutils.util
@@ -155,15 +155,14 @@ class MaskRCNNWorker:
 
         logger.info("Infer time: {}".format(time.time() - start_time))
         result = {
-            'boxes': cls_boxes,
-            'segms': cls_segms,
-            'keyps': cls_keyps
+            'boxes': jsonpickle.encode(cls_boxes),
+            'segms': jsonpickle.encode(cls_segms),
+            'keyps': jsonpickle.encode(cls_keyps)
         }
         return result
 
 
 app = Flask(__name__)
-CORS(app)
 mask_rcnn_worker = MaskRCNNWorker()
 
 
@@ -201,7 +200,7 @@ def mask_rcnn():
             "The server encounters some error to process this image",
             status_code=500
         )
-    return jsonify(result)
+        return jsonify({"result": result})
 
 
 class InvalidUsage(Exception):
@@ -228,4 +227,4 @@ def handle_invalid_usage(error):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8082)
