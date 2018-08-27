@@ -200,7 +200,7 @@ def mask_rcnn():
             "The server encounters some error to process this image",
             status_code=500
         )
-        return jsonify({"result": result})
+    return jsonify({"result": result})
 
 
 class InvalidUsage(Exception):
