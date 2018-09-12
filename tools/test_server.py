@@ -4,7 +4,6 @@ import time
 from PIL import Image
 from flask import Flask, request, jsonify
 import numpy as np
-import jsonpickle
 
 import argparse
 import distutils.util
@@ -28,6 +27,7 @@ import datasets.dummy_datasets as datasets
 import utils.net as net_utils
 from utils.detectron_weight_helper import load_detectron_weight
 from utils.timer import Timer
+from utils.vis import convert_from_cls_format
 
 # OpenCL may be enabled by default in OpenCV3; disable it because it's not
 # thread safe and causes unwanted GPU memory allocations.
@@ -144,20 +144,31 @@ class MaskRCNNWorker:
         self.maskRCNN = maskRCNN
         self.args = args
 
-    def infer(self, img_PIL):
+    def infer(self, img_PIL, thresh=0.9):
         start_time = time.time()
 
         im = np.array(img_PIL)[:, :, ::-1].copy()
         timers = defaultdict(Timer)
 
-        cls_boxes, cls_segms, cls_keyps = im_detect_all(
+        boxes, segms, keyps = im_detect_all(
             self.maskRCNN, im, timers=timers)
+        if isinstance(boxes, list):
+            boxes, segms, keyps, classes = convert_from_cls_format(
+                boxes, segms, keyps)
+        if not (
+            boxes is None or boxes.shape[0] == 0 or max(boxes[:, 4]) < thresh
+        ):
+            boxes = boxes.tolist()
+        else:
+            boxes = []
 
         logger.info("Infer time: {}".format(time.time() - start_time))
+
         result = {
-            'boxes': jsonpickle.encode(cls_boxes),
-            'segms': jsonpickle.encode(cls_segms),
-            'keyps': jsonpickle.encode(cls_keyps)
+            'boxes': boxes,
+            'segms': segms,
+            'keyps': keyps,
+            'classes': classes
         }
         return result
 
